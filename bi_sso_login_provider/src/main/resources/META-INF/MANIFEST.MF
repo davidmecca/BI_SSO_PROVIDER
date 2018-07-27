@@ -1,0 +1,1 @@
+Login-Provider-Class-Name: com.infa.sso.e360.CustomLoginProvider
