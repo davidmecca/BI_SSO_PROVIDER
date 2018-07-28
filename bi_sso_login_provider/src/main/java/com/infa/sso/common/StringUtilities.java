@@ -210,4 +210,12 @@ public class StringUtilities {
 			return false;
 	}
 
+	public static String removeNonPrintChars(String s) {
+
+		if (s != null && s.length() > 0)
+			return s.trim().replaceAll("[\\p{Cntrl}&&[^\r\n\t]]", "");
+		else
+			return s;
+	}
+
 }

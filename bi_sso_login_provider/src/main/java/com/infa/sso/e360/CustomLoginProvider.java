@@ -1,27 +1,52 @@
 package com.infa.sso.e360;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
-import java.util.Enumeration;
+import java.nio.charset.StandardCharsets;
+import java.security.cert.X509Certificate;
+import java.util.Collection;
 import java.util.Properties;
+import java.util.Random;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.apache.commons.io.IOUtils;
+import org.opensaml.DefaultBootstrap;
 import org.opensaml.saml2.core.Assertion;
+import org.opensaml.saml2.core.AuthnRequest;
 import org.opensaml.saml2.core.Response;
 import org.opensaml.saml2.core.validator.ResponseSchemaValidator;
+import org.opensaml.saml2.metadata.EntityDescriptor;
+import org.opensaml.saml2.metadata.IDPSSODescriptor;
+import org.opensaml.saml2.metadata.provider.FilesystemMetadataProvider;
+import org.opensaml.xml.Configuration;
+import org.opensaml.xml.ConfigurationException;
+import org.opensaml.xml.XMLObject;
+import org.opensaml.xml.io.Unmarshaller;
+import org.opensaml.xml.io.UnmarshallerFactory;
+import org.opensaml.xml.parse.BasicParserPool;
+import org.opensaml.xml.security.credential.Credential;
+import org.opensaml.xml.security.x509.BasicX509Credential;
+import org.opensaml.xml.security.x509.X509Util;
 import org.opensaml.xml.signature.Signature;
+import org.opensaml.xml.signature.SignatureValidator;
 import org.opensaml.xml.util.Base64;
 import org.opensaml.xml.validation.ValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
+import com.infa.sso.common.SSOConstants;
 import com.infa.sso.common.StringUtilities;
+import com.infa.sso.saml.AuthenticationRequestBuilder;
+import com.infa.sso.saml.SamlException;
 import com.infa.sso.saml.SamlResponse;
 import com.siperian.bdd.security.LoginCredentials;
 import com.siperian.bdd.security.LoginProvider;
@@ -30,72 +55,121 @@ import com.siperian.bdd.security.LoginProviderException;
 public class CustomLoginProvider implements LoginProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(CustomLoginProvider.class);
-	private static final String ASSERTION_ISSUER = "onecustomer.boehringer.com";
+	private static final String ASSERTION_ISSUER = "pfq1.boehringer.com";
 	private static final String LOGOUT_TARGET = "/mdm/entity360view/?logoutParam=gotoLogoutPage";
 	private static final String SAML_RESPONSE_PARAM = "SAMLResponse";
+	private static final String FILE_LOC = "/app/infamdm/hub/server/custom_resources/";
+
+	private Properties loginProperies = new Properties();
 
 	public CustomLoginProvider() {
-		super();
+
+		try {
+			DefaultBootstrap.bootstrap();
+		} catch (ConfigurationException e) {
+			e.printStackTrace();
+		}
+
+		loadProperties();
+
 	}
 
+	private void loadProperties() {
+
+		try {
+			InputStream is = new FileInputStream(FILE_LOC + "custom_login_provider.properties");
+			loginProperies.load(is);
+		} catch (FileNotFoundException e) {
+			logger.warn("Cannot find file /app/infamdm/hub/server/custom_resources/custom_login_provider.properties");
+		} catch (IOException e) {
+			logger.error(
+					"Error reading file /app/infamdm/hub/server/custom_resources/custom_login_provider.properties");
+		}
+
+	}
+
+	@Override
 	public LoginCredentials extractLoginCredentials(HttpServletRequest httpServletRequest)
 			throws LoginProviderException {
 
-		if (logger.isDebugEnabled()) {
-			logger.debug("Entering method CustomLoginProvider.extractLoginCredentials");
+		Random randomSessionId = new Random();
+		StringBuilder credentialBuilder = new StringBuilder();
+		String userId = null;
+		SamlResponse samlResponseObj = null;
+		String samlDecoded = null;
 
-			Enumeration headerNames = httpServletRequest.getHeaderNames();
-			if (!headerNames.hasMoreElements()) {
-				logger.debug("Header is empty");
-			}
-			while (headerNames.hasMoreElements()) {
-				String key = (String) headerNames.nextElement();
-				String value = httpServletRequest.getHeader(key);
-				logger.debug("Header key:" + key + " -- Value:" + value);
-			}
+		String requestBodySamlResponse = httpServletRequest.getParameter(SAML_RESPONSE_PARAM);
 
-			logger.debug("Servlet Request URI :: " + httpServletRequest.getRequestURI());
-			logger.debug("SAML_RESPONSE_PARAM :: " + httpServletRequest.getParameter(SAML_RESPONSE_PARAM));
+		logger.debug("SAML Response: " + requestBodySamlResponse);
 
+		if (requestBodySamlResponse == null || requestBodySamlResponse.length() == 0) {
+			logger.warn("Request does not contains a SAMLResponse parameter");
+			return null; // Returning null will force a redirect to Ping Federate
 		}
+
 		try {
-			decodeAndValidateSamlResponse(httpServletRequest.getParameter(SAML_RESPONSE_PARAM));
+			samlDecoded = new String(Base64.decode(requestBodySamlResponse));
+		} catch (Exception ex) {
+			logger.error(
+					"Error executing Base64 decoding of SAML response.  Response may not be Base64 encoded.  Error: "
+							+ ex.getMessage());
+			return null;
+		}
+
+		logger.debug("SAML Response decoded: " + samlDecoded);
+
+		try {
+			samlResponseObj = decodeAndValidateSamlResponse(samlDecoded);
+			userId = samlResponseObj.getUserId().trim();
+			if (userId == null) {
+				logger.error("SAML response UID field is null");
+				return null; // Returning null will force a redirect to Ping Federate
+			}
 		} catch (Exception e) {
 			logger.error(e.getMessage());
+			// throw new LoginProviderException(e);
+			return null;
 		}
 
-		String payload = "sso;samluser;12345";
+		if (logger.isDebugEnabled()) {
+			logger.debug("SAML UID (user ID) -> " + userId);
+			logger.debug("SAML First Name -> " + samlResponseObj.getUserFirstName());
+			logger.debug("SAML Last Name -> " + samlResponseObj.getUserLastName());
+		}
+
+		credentialBuilder.append(SSOConstants.PAYLOAD_PREFIX);
+		credentialBuilder.append(SSOConstants.PAYLOAD_SEPARATOR);
+		credentialBuilder.append(StringUtilities.removeNonPrintChars(userId));
+		credentialBuilder.append(SSOConstants.PAYLOAD_SEPARATOR);
+		credentialBuilder.append(Integer.toString(randomSessionId.nextInt(900000) + 100000));
+
 		LoginCredentials lc = null;
 		try {
-			lc = new LoginCredentials(payload.getBytes("UTF-8"));
-		} catch (UnsupportedEncodingException e) {
-			logger.error("Wrong encoding: UTF-8", e);
-			throw new LoginProviderException("Wrong encoding: UTF-8", e);
+			lc = new LoginCredentials(credentialBuilder.toString().getBytes(SSOConstants.PAYLOAD_CHAR_ENCODING));
+			lc.setFirstName(StringUtilities.removeNonPrintChars(samlResponseObj.getUserFirstName().trim()));
+			lc.setLastName(StringUtilities.removeNonPrintChars(samlResponseObj.getUserLastName().trim()));
+			if (logger.isDebugEnabled()) {
+				logger.debug("Created LoginCredential");
+			}
+		} catch (Exception e) {
+			logger.error("Credential creation error", e);
+			throw new LoginProviderException("Credential creation error", e);
 		}
-		// in case if you get the correct firstname and last name from sso
-		// provider, set it here
-		lc.setFirstName("ssotest");
 
 		return lc;
 	}
 
+	@Override
 	public InputStream getLogoImageBody() {
 		return null;
 	}
 
+	@Override
 	public void initialize(Properties properties) {
-
-		logger.debug("In initialize");
-		if (logger.isDebugEnabled()) {
-			for (String key : properties.stringPropertyNames()) {
-				String value = properties.getProperty(key);
-				logger.debug("Property key: " + key + " -- Value: " + value);
-			}
-
-		}
 
 	}
 
+	@Override
 	public boolean isUseIDDLoginForm() {
 
 		logger.debug("Entering isUseIDDLoginForm");
@@ -103,27 +177,10 @@ public class CustomLoginProvider implements LoginProvider {
 		return false;
 	}
 
+	@Override
 	public void onLogout(HttpServletRequest request, HttpServletResponse response) {
 
-		response.setContentType("application/json");
-		try {
-			response.getWriter()
-					.write("{\"kerberos\": \"true\", \"logoutURL\": \"/mdm/entity360view/?logoutInd=true\"}");
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
 		logger.debug("Logging out.  Session ID:" + request.getSession().getId());
-		Enumeration headerNames = request.getHeaderNames();
-		if (!headerNames.hasMoreElements()) {
-			logger.debug("Header is empty");
-		}
-		while (headerNames.hasMoreElements()) {
-			String key = (String) headerNames.nextElement();
-			String value = request.getHeader(key);
-			logger.debug("Logout Header key:" + key + " -- Value:" + value);
-		}
 
 		try {
 			if (!response.isCommitted()) {
@@ -145,6 +202,7 @@ public class CustomLoginProvider implements LoginProvider {
 
 	}
 
+	@Override
 	public void redirectToProviderLoginPage(HttpServletRequest request, HttpServletResponse response,
 			String originalRequest) throws LoginProviderException {
 
@@ -155,49 +213,76 @@ public class CustomLoginProvider implements LoginProvider {
 			if ("gotoLogoutPage".equalsIgnoreCase(request.getParameter("logoutParam"))) {
 				response.sendRedirect("http://www.google.com");
 			} else {
-				response.sendRedirect("https://pfq1.boehringer.com/idp/SSO.saml2");
+				redirectUserForAuthentication(response);
+				//response.sendRedirect("https://pfq1.boehringer.com/idp/SSO.saml2");
 			}
 		} catch (IOException e) {
 			logger.error(e.getMessage());
 		}
 	}
 
+	@Override
 	public LoginCredentials requestLoginCredentials(String arg0, String arg1) throws LoginProviderException {
 		logger.debug("Entering requestLoginCredentials");
 		return null;
 	}
 
+	@Override
 	public String encodeComponentUrl(String arg0) throws LoginProviderException {
 
 		return null;
 	}
 
-	private SamlResponse decodeAndValidateSamlResponse(String samlResponse) throws Exception {
-		String samlXml;
-
+	private SamlResponse decodeAndValidateSamlResponse(String samlXml) throws Exception {
+		Response response = null;
+		InputStream inputStream = null;
 		try {
-			samlXml = new String(Base64.decode(samlResponse), "UTF-8");
-		} catch (Exception ex) {
-			logger.error("Error executing Base64 decoding of SAML response.  Response may not be Base64 encoded.\n\n"
-					+ StringUtilities.stackTraceToString(ex.getStackTrace()));
-			samlXml = samlResponse;
+			DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+			dbf.setNamespaceAware(true);
+			DocumentBuilder db = dbf.newDocumentBuilder();
+			inputStream = IOUtils.toInputStream(samlXml, StandardCharsets.UTF_8);
+			Document document = db.parse(inputStream);
+			Element samlElement = document.getDocumentElement();
+			UnmarshallerFactory unmarshallerFactory = Configuration.getUnmarshallerFactory();
+			Unmarshaller unmarshaller = unmarshallerFactory.getUnmarshaller(samlElement);
+			XMLObject responseXmlObj = unmarshaller.unmarshall(samlElement);
+			response = (Response) responseXmlObj;
+		} catch (Exception e) {
+			logger.error(e.getMessage());
+			logger.error(StringUtilities.stackTraceToString(e.getStackTrace()));
+			throw e;
+		} finally {
+			try {
+				inputStream.close();
+			} catch (IOException ioex) {
+				logger.warn(ioex.getMessage());
+			}
 		}
 
 		if (logger.isDebugEnabled())
-			logger.debug("Validating SAML response:: " + samlXml);
+			logger.debug("Starting SAML validation....");
 
-		DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-		DocumentBuilder db;
-		db = dbf.newDocumentBuilder();
-		Document document = db.parse(samlXml);
-
-		Response response = (Response) document.getDocumentElement();
 		validateResponse(response);
 		validateAssertion(response);
-		validateSignature(response);
+
+		if (isValidateSignature())
+			validateSignature(response);
+		else
+			logger.warn("Skipping SAML signature validation.");
+
+		if (logger.isDebugEnabled())
+			logger.debug("SAML validation completed.");
 
 		Assertion assertion = response.getAssertions().get(0);
 		return new SamlResponse(assertion);
+	}
+
+	private boolean isValidateSignature() {
+
+		return loginProperies.getProperty("validate.saml.signature") == null
+				|| loginProperies.getProperty("validate.saml.signature").isEmpty() ? true
+						: Boolean.valueOf(loginProperies.getProperty("validate.saml.signature"));
+
 	}
 
 	private void validateResponse(Response response) throws Exception {
@@ -212,7 +297,6 @@ public class CustomLoginProvider implements LoginProvider {
 		}
 
 		String statusCode = response.getStatus().getStatusCode().getValue();
-
 		if (!statusCode.equals("urn:oasis:names:tc:SAML:2.0:status:Success")) {
 			throw new Exception("Invalid status code: " + statusCode);
 		}
@@ -253,11 +337,72 @@ public class CustomLoginProvider implements LoginProvider {
 		}
 	}
 
-	private boolean validate(Signature signature) {
+	private boolean validate(Signature signature) throws Exception {
 		if (signature == null) {
 			return false;
 		}
-		return true;
+
+		try {
+			SignatureValidator signatureValidator = new SignatureValidator(getCredential());
+
+			signatureValidator.validate(signature);
+			return true;
+		} catch (ValidationException ex) {
+			return false;
+		}
+
+	}
+
+	private Credential getCredential() throws Exception {
+
+		FilesystemMetadataProvider idpMetaDataProvider = new FilesystemMetadataProvider(
+				new File(FILE_LOC + "saml_metadata.xml"));
+		idpMetaDataProvider.setRequireValidMetadata(true);
+		idpMetaDataProvider.setParserPool(new BasicParserPool());
+		idpMetaDataProvider.initialize();
+		EntityDescriptor entityDescriptor = (EntityDescriptor) idpMetaDataProvider.getMetadata();
+		IDPSSODescriptor idpSsoDescriptor = getIDPSSODescriptor(entityDescriptor);
+
+		X509Certificate certificate = getCertificate(idpSsoDescriptor);
+		BasicX509Credential credential = new BasicX509Credential();
+		credential.setEntityCertificate(certificate);
+		logger.info("SAML metadata certificate obtained from system resources.");
+		return credential;
+
+	}
+
+	private IDPSSODescriptor getIDPSSODescriptor(EntityDescriptor entityDescriptor) throws SamlException {
+		IDPSSODescriptor idpssoDescriptor = entityDescriptor
+				.getIDPSSODescriptor("urn:oasis:names:tc:SAML:2.0:protocol");
+		if (idpssoDescriptor == null) {
+			throw new SamlException("Cannot retrieve IDP SSO descriptor");
+		}
+
+		return idpssoDescriptor;
+	}
+
+	private X509Certificate getCertificate(IDPSSODescriptor idpSsoDescriptor) throws SamlException {
+
+		try {
+			Collection<X509Certificate> certs = X509Util
+					.decodeCertificate(Base64.decode(idpSsoDescriptor.getKeyDescriptors().get(0).getKeyInfo()
+							.getX509Datas().get(0).getX509Certificates().get(0).getValue()));
+			if (certs != null && certs.iterator().hasNext()) {
+				return certs.iterator().next();
+			} else {
+				return null;
+			}
+		} catch (Exception e) {
+			throw new SamlException("Exception in getCertificates", e);
+		}
+
+	}
+
+	private void redirectUserForAuthentication(HttpServletResponse httpServletResponse) {
+		AuthenticationRequestBuilder arb = new AuthenticationRequestBuilder();
+		AuthnRequest authnRequest = arb.buildAuthenticationRequest();
+		arb.redirectUserWithRequest(httpServletResponse, authnRequest);
+
 	}
 
 }

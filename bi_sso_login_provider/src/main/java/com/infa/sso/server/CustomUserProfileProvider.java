@@ -1,13 +1,13 @@
 package com.infa.sso.server;
 
-import java.io.UnsupportedEncodingException;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.StringTokenizer;
 
 import org.apache.log4j.Logger;
 
+import com.infa.sso.common.SSOConstants;
 import com.siperian.sam.SecurityCredential;
 import com.siperian.sam.UserProfile;
 import com.siperian.sam.UserProfileProvider;
@@ -25,57 +25,42 @@ public class CustomUserProfileProvider implements UserProfileProvider {
 
 	@Override
 	public UserProfile createUserProfile(SecurityCredential securityCredential) {
-		if ((securityCredential.getPayload() == null)
-				|| (securityCredential.getPayload().length == 0)) {
+		if ((securityCredential.getPayload() == null) || (securityCredential.getPayload().length == 0)) {
 			return null;
-		}
-
-		// Decipher the payload that you set in LoginProvider
-		String sessionAndServer = null;
-		try {
-			sessionAndServer = new String(securityCredential.getPayload(),
-					"UTF-8");
-		} catch (UnsupportedEncodingException e) {
-			logger.error("Wrong encoding.", e);
-			return null;
-		}
-		if (!sessionAndServer.startsWith("sso")) {
-			return null;
-		}
-
-		StringTokenizer tokenizer = new StringTokenizer(sessionAndServer, ";");
-		if (tokenizer.hasMoreTokens()) {
-			tokenizer.nextToken();
-		}
-
-		String user = "";
-		if (tokenizer.hasMoreTokens()) {
-			user = tokenizer.nextToken();
-		}
-
-		String sessionId = "";
-		if (tokenizer.hasMoreTokens()) {
-			sessionId = tokenizer.nextToken();
 		}
 
 		CustomBDDPayload bddPayload = new CustomBDDPayload();
-		bddPayload.setUsername(user);
-		bddPayload.setSessionId(sessionId);
+		try {
+			String credPayload = new String(securityCredential.getPayload(), "UTF-8");
+			if (logger.isDebugEnabled())
+				logger.debug("Credential payload -> " + credPayload);
+			if (!credPayload.startsWith(SSOConstants.PAYLOAD_PREFIX)) {
+				logger.error("Credential payload not sent from IdP.");
+				return null;
+			}
+			String[] payloadValues = credPayload.split(SSOConstants.PAYLOAD_SEPARATOR);
+			bddPayload.setUsername(payloadValues[1]);
+			bddPayload.setSessionId(payloadValues[2]);
+		} catch (IOException e) {
+			logger.error("Error decoding security payload.", e);
+			return null;
+		}
 		bddPayload.setDatabaseId(securityCredential.getDatabaseId());
 
-		logger.info("UserName ->" + user);
-		logger.info("SessionId ->" + sessionId);
-		logger.info("DatabaseId ->" + securityCredential.getDatabaseId());
-
 		UserProfile userProfile = new UserProfile();
-		userProfile.setUsername(user);
+		userProfile.setUsername(bddPayload.getUsername());
 		userProfile.setPayload(bddPayload);
-
-		// cache user profile
-		userProfile.setCacheKey(sessionId);
+		
+		userProfile.setCacheKey(bddPayload.getSessionId());
 		userProfile.setCacheable(Boolean.TRUE);
-		userProfile.setExpiration(new Long(60000L));
-		userProfile.setLifeSpan(new Long(86400000L));
+		userProfile.setExpiration(EXPIRATION);
+		userProfile.setLifeSpan(LIFE_SPAN);
+
+		if (logger.isDebugEnabled()) {
+			logger.debug("UserName -> " + bddPayload.getUsername());
+			logger.debug("SessionID -> " + bddPayload.getSessionId());
+			logger.debug("DatabaseId -> " + bddPayload.getDatabaseId());
+		}
 
 		return userProfile;
 

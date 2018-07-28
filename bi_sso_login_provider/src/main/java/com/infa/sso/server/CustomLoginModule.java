@@ -1,6 +1,8 @@
 package com.infa.sso.server;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import javax.security.auth.Subject;
@@ -13,8 +15,11 @@ import javax.security.auth.spi.LoginModule;
 import org.apache.log4j.Logger;
 
 import com.siperian.common.SipRuntimeException;
+import com.siperian.sam.Role;
+import com.siperian.sam.SamUtils;
 import com.siperian.sam.UserProfile;
 import com.siperian.sam.UserProfileCallback;
+import com.siperian.sam.common.SamUtilsHelper;
 
 public class CustomLoginModule implements LoginModule {
 	private static final Logger logger = Logger.getLogger(CustomLoginModule.class);
@@ -23,12 +28,10 @@ public class CustomLoginModule implements LoginModule {
 	public CustomLoginModule() {
 		super();
 	}
-	
+
 	@Override
 	public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState,
 			Map<String, ?> options) {
-
-		log("In initialize");
 		this.callbackHandler = callbackHandler;
 	}
 
@@ -41,8 +44,17 @@ public class CustomLoginModule implements LoginModule {
 			this.callbackHandler.handle(new Callback[] { userProfileCallback });
 			UserProfile userProfile = userProfileCallback.getUserProfile();
 
-			if ((userProfile.getPayload() == null) || (!(userProfile.getPayload() instanceof CustomBDDPayload))) {
+			if ((userProfile.getPayload() == null)) {
 				logger.warn("UserProfile is null.");
+				return false;
+
+			} else {
+				if (logger.isDebugEnabled())
+					logger.debug("User profile payload -> " + userProfile.getPayload());
+			}
+
+			if ((!(userProfile.getPayload() instanceof CustomBDDPayload))) {
+				logger.warn("UserProfile is not an instance of CustomBDDPayload.");
 				return false;
 			}
 			CustomBDDPayload payload = (CustomBDDPayload) userProfile.getPayload();
@@ -58,9 +70,19 @@ public class CustomLoginModule implements LoginModule {
 			}
 
 			if ((payload.getDatabaseId() != null) && (!payload.getDatabaseId().isEmpty())) {
-				userProfile.setCacheable(true);
 
-				setupUserRoles(userProfile, payload);
+				if (logger.isDebugEnabled()) {
+					SamUtilsHelper samHelper = new SamUtilsHelper();
+					List<Role> roles = samHelper.getAllRoles(payload.getDatabaseId(), username);
+					logger.debug("Roles -> " + roles + " - " + roles.size());
+				}
+				
+				if (username != null) {
+					userProfile.setCacheable(true);
+					setupUserRoles(userProfile, payload);
+				} else {
+					userProfile.setCacheable(false);
+				}
 
 			} else {
 				userProfile.setCacheable(false);
@@ -76,7 +98,20 @@ public class CustomLoginModule implements LoginModule {
 	}
 
 	private void setupUserRoles(UserProfile userProfile, CustomBDDPayload payload) {
-
+		List<String> roleIds = new ArrayList<String>();
+		List<String> roleNames = new ArrayList<String>();
+		SamUtils samUtils = SamUtils.getInstance();
+		List<Role> roles = samUtils.getAllRoles(payload.getDatabaseId(), userProfile.getUsername());
+		logger.debug("User roles count -> " + roles.size());
+		for (Role role : roles) {
+			if (logger.isDebugEnabled()) {
+				logger.debug(String.format("Role Name - %s, ROWID - %s", role.getName(), role.getRowid()));
+			}
+			roleIds.add(role.getRowid());
+			roleNames.add(role.getName());
+		}
+		userProfile.setUserRoles(roleIds);
+		userProfile.setUserRoleNames(roleNames);
 	}
 
 	@Override
