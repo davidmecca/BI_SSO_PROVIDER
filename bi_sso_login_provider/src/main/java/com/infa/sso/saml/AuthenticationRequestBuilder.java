@@ -24,11 +24,13 @@ import org.opensaml.saml2.metadata.Endpoint;
 import org.opensaml.saml2.metadata.SingleSignOnService;
 import org.opensaml.ws.message.encoder.MessageEncodingException;
 import org.opensaml.ws.transport.http.HttpServletResponseAdapter;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.infa.sso.util.SamlUtility;
 
 public class AuthenticationRequestBuilder {
 
+	private static final Logger logger = LoggerFactory.getLogger(AuthenticationRequestBuilder.class);
 	private static final String SAML2_NAME_ID_POLICY = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent";
 	private static final String SAML2_PROTOCOL = "urn:oasis:names:tc:SAML:2.0:protocol";
 	private static final String SAML2_POST_BINDING = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST";
@@ -52,6 +54,12 @@ public class AuthenticationRequestBuilder {
 		authRequest.setRequestedAuthnContext(buildRequestedAuthnContext());
 		authRequest.setID(UUID.randomUUID().toString());
 		authRequest.setVersion(SAMLVersion.VERSION_20);
+		authRequest.setDestination(IDP_SSO_URL);
+		
+		if (logger.isDebugEnabled()) {
+			logger.debug("SAML authentication request -> " + authRequest.toString());
+			logger.debug("Assertion Consumer Service URL -> " + authRequest.getAssertionConsumerServiceURL());
+		}
 
 		return authRequest;
 	}

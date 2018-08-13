@@ -13,7 +13,7 @@ import com.siperian.sam.UserProfile;
 import com.siperian.sam.UserProfileProvider;
 
 public class CustomUserProfileProvider implements UserProfileProvider {
-	public static final Long EXPIRATION = 60000L;
+	public static final Long EXPIRATION = 120000L;
 	public static final Long LIFE_SPAN = 86400000L;
 	private static final Logger logger = Logger.getLogger(CustomUserProfileProvider.class);
 
@@ -35,7 +35,6 @@ public class CustomUserProfileProvider implements UserProfileProvider {
 			if (logger.isDebugEnabled())
 				logger.debug("Credential payload -> " + credPayload);
 			if (!credPayload.startsWith(SSOConstants.PAYLOAD_PREFIX)) {
-				logger.error("Credential payload not sent from IdP.");
 				return null;
 			}
 			String[] payloadValues = credPayload.split(SSOConstants.PAYLOAD_SEPARATOR);
@@ -50,7 +49,7 @@ public class CustomUserProfileProvider implements UserProfileProvider {
 		UserProfile userProfile = new UserProfile();
 		userProfile.setUsername(bddPayload.getUsername());
 		userProfile.setPayload(bddPayload);
-		
+
 		userProfile.setCacheKey(bddPayload.getSessionId());
 		userProfile.setCacheable(Boolean.TRUE);
 		userProfile.setExpiration(EXPIRATION);

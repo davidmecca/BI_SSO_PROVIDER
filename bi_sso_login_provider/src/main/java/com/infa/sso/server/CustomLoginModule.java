@@ -45,12 +45,7 @@ public class CustomLoginModule implements LoginModule {
 			UserProfile userProfile = userProfileCallback.getUserProfile();
 
 			if ((userProfile.getPayload() == null)) {
-				logger.warn("UserProfile is null.");
 				return false;
-
-			} else {
-				if (logger.isDebugEnabled())
-					logger.debug("User profile payload -> " + userProfile.getPayload());
 			}
 
 			if ((!(userProfile.getPayload() instanceof CustomBDDPayload))) {
@@ -70,20 +65,8 @@ public class CustomLoginModule implements LoginModule {
 			}
 
 			if ((payload.getDatabaseId() != null) && (!payload.getDatabaseId().isEmpty())) {
-
-				if (logger.isDebugEnabled()) {
-					SamUtilsHelper samHelper = new SamUtilsHelper();
-					List<Role> roles = samHelper.getAllRoles(payload.getDatabaseId(), username);
-					logger.debug("Roles -> " + roles + " - " + roles.size());
-				}
-				
-				if (username != null) {
-					userProfile.setCacheable(true);
-					setupUserRoles(userProfile, payload);
-				} else {
-					userProfile.setCacheable(false);
-				}
-
+				userProfile.setCacheable(true);
+				setupUserRoles(userProfile, payload);
 			} else {
 				userProfile.setCacheable(false);
 			}

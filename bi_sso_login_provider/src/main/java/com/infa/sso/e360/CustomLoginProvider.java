@@ -167,6 +167,9 @@ public class CustomLoginProvider implements LoginProvider {
 	@Override
 	public void initialize(Properties properties) {
 
+		String redirectInd = properties.getProperty("enable.redirect");
+		logger.debug("Redirect indicator - > " + redirectInd);
+
 	}
 
 	@Override
@@ -187,7 +190,6 @@ public class CustomLoginProvider implements LoginProvider {
 				try {
 					response.setContentType("application/json");
 					response.setHeader("Cache-Control", "no-cache, no-store");
-
 					String jsonFormat = "{\"kerberos\":\"true\", \"logoutURL\":\"%s\"}";
 					String jsonStr = String.format(jsonFormat, LOGOUT_TARGET);
 					response.getOutputStream().write(jsonStr.getBytes());
@@ -206,30 +208,31 @@ public class CustomLoginProvider implements LoginProvider {
 	public void redirectToProviderLoginPage(HttpServletRequest request, HttpServletResponse response,
 			String originalRequest) throws LoginProviderException {
 
-		logger.debug("Entering redirectToProviderLoginPage");
-		logger.debug("logoutInd: " + request.getParameter("logoutParam"));
+		if (logger.isDebugEnabled())
+			logger.debug("Entering redirectToProviderLoginPage");
+
 		try {
-			logger.debug("Issuing rediection to IdP");
+			if (logger.isDebugEnabled())
+				logger.debug("Issuing rediection to IdP");
 			if ("gotoLogoutPage".equalsIgnoreCase(request.getParameter("logoutParam"))) {
 				response.sendRedirect("http://www.google.com");
 			} else {
-				redirectUserForAuthentication(response);
-				//response.sendRedirect("https://pfq1.boehringer.com/idp/SSO.saml2");
+				// redirectUserForAuthentication(response);
+				response.sendRedirect("https://pfq1.boehringer.com/idp/SSO.saml2");
 			}
-		} catch (IOException e) {
+		} catch (IOException | LinkageError e) {
 			logger.error(e.getMessage());
 		}
+
 	}
 
 	@Override
 	public LoginCredentials requestLoginCredentials(String arg0, String arg1) throws LoginProviderException {
-		logger.debug("Entering requestLoginCredentials");
 		return null;
 	}
 
 	@Override
 	public String encodeComponentUrl(String arg0) throws LoginProviderException {
-
 		return null;
 	}
 
