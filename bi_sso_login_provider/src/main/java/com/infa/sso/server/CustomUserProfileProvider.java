@@ -57,7 +57,7 @@ public class CustomUserProfileProvider implements UserProfileProvider {
 
 		if (logger.isDebugEnabled()) {
 			logger.debug("UserName -> " + bddPayload.getUsername());
-			logger.debug("SessionID -> " + bddPayload.getSessionId());
+			logger.debug("SessionId -> " + bddPayload.getSessionId());
 			logger.debug("DatabaseId -> " + bddPayload.getDatabaseId());
 		}
 

@@ -9,7 +9,7 @@ import com.infa.sso.common.Base64Tool;
 import com.infa.sso.common.SSOConstants;
 
 public class SsoPayloadEncoder {
-	private static final Logger LOG = LoggerFactory.getLogger(SsoPayloadEncoder.class);
+	private static final Logger logger = LoggerFactory.getLogger(SsoPayloadEncoder.class);
 	private String userName;
 	private String sessionId;
 
@@ -17,8 +17,8 @@ public class SsoPayloadEncoder {
 		this.userName = userName;
 		this.sessionId = sessionId;
 
-		if (LOG.isDebugEnabled()) {
-			LOG.debug(String.format("Payload for user: %s and sessionId: %s", userName, sessionId));
+		if (logger.isDebugEnabled()) {
+			logger.debug(String.format("Payload for user: %s and sessionId: %s", userName, sessionId));
 		}
 	}
 
@@ -26,7 +26,7 @@ public class SsoPayloadEncoder {
 		StringBuilder mainPayload = new StringBuilder(SSOConstants.PAYLOAD_PREFIX);
 		mainPayload.append(SSOConstants.PAYLOAD_SEPARATOR);
 		mainPayload.append(userName).append(SSOConstants.PAYLOAD_SEPARATOR).append(sessionId);
-		byte[] payload1 = encryptData(mainPayload.toString().getBytes(SSOConstants.PAYLOAD_CHAR_ENCODING));
+		byte[] payload1 = mainPayload.toString().getBytes(SSOConstants.PAYLOAD_CHAR_ENCODING);
 
 		StringBuilder outer = new StringBuilder(SSOConstants.PAYLOAD_PREFIX);
 		outer.append(SSOConstants.PAYLOAD_SEPARATOR);
@@ -34,7 +34,4 @@ public class SsoPayloadEncoder {
 		return outer.toString().getBytes(SSOConstants.PAYLOAD_CHAR_ENCODING);
 	}
 
-	private byte[] encryptData(byte[] bytes) {
-		return bytes;
-	}
 }

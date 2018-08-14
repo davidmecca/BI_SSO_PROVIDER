@@ -6,7 +6,6 @@ import java.security.NoSuchAlgorithmException;
 import javax.xml.namespace.QName;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
@@ -38,39 +37,32 @@ public class SamlUtility {
 	}
 
 	public static <T> T buildSAMLObject(final Class<T> clazz) {
-		T object = null;
 		try {
 			XMLObjectBuilderFactory builderFactory = Configuration.getBuilderFactory();
 			QName defaultElementName = (QName) clazz.getDeclaredField("DEFAULT_ELEMENT_NAME").get(null);
-			object = (T) builderFactory.getBuilder(defaultElementName).buildObject(defaultElementName);
+			return (T) builderFactory.getBuilder(defaultElementName).buildObject(defaultElementName);
 		} catch (IllegalAccessException e) {
 			throw new IllegalArgumentException("Could not create SAML object");
 		} catch (NoSuchFieldException e) {
 			throw new IllegalArgumentException("Could not create SAML object");
 		}
 
-		return object;
 	}
 
-	public static String generateSecureRandomId() {
+	public static String getSecureRandomId() {
 		return secureRandomIdGenerator.generateIdentifier();
 	}
 
-	public static void logSAMLObject(final XMLObject object) {
+	public static void logSAMLObject(final XMLObject object) throws MarshallingException {
 		Element element = null;
 
 		if (object instanceof SignableSAMLObject && ((SignableSAMLObject) object).isSigned()
 				&& object.getDOM() != null) {
 			element = object.getDOM();
 		} else {
-			try {
-				Marshaller out = Configuration.getMarshallerFactory().getMarshaller(object);
-				out.marshall(object);
-				element = object.getDOM();
-
-			} catch (MarshallingException e) {
-				logger.error(e.getMessage(), e);
-			}
+			Marshaller out = Configuration.getMarshallerFactory().getMarshaller(object);
+			out.marshall(object);
+			element = object.getDOM();
 		}
 
 		try {
@@ -81,10 +73,7 @@ public class SamlUtility {
 
 			transformer.transform(source, result);
 			String xmlString = result.getWriter().toString();
-
 			logger.info(xmlString);
-		} catch (TransformerConfigurationException e) {
-			e.printStackTrace();
 		} catch (TransformerException e) {
 			e.printStackTrace();
 		}

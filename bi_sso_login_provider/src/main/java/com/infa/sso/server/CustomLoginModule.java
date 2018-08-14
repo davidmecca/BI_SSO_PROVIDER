@@ -19,7 +19,6 @@ import com.siperian.sam.Role;
 import com.siperian.sam.SamUtils;
 import com.siperian.sam.UserProfile;
 import com.siperian.sam.UserProfileCallback;
-import com.siperian.sam.common.SamUtilsHelper;
 
 public class CustomLoginModule implements LoginModule {
 	private static final Logger logger = Logger.getLogger(CustomLoginModule.class);
@@ -38,7 +37,6 @@ public class CustomLoginModule implements LoginModule {
 	@Override
 	public boolean login() throws LoginException {
 
-		log("Entering login() method");
 		try {
 			UserProfileCallback userProfileCallback = new UserProfileCallback();
 			this.callbackHandler.handle(new Callback[] { userProfileCallback });
@@ -85,7 +83,6 @@ public class CustomLoginModule implements LoginModule {
 		List<String> roleNames = new ArrayList<String>();
 		SamUtils samUtils = SamUtils.getInstance();
 		List<Role> roles = samUtils.getAllRoles(payload.getDatabaseId(), userProfile.getUsername());
-		logger.debug("User roles count -> " + roles.size());
 		for (Role role : roles) {
 			if (logger.isDebugEnabled()) {
 				logger.debug(String.format("Role Name - %s, ROWID - %s", role.getName(), role.getRowid()));
@@ -112,9 +109,4 @@ public class CustomLoginModule implements LoginModule {
 		return true;
 	}
 
-	private void log(String msg) {
-		if (logger.isDebugEnabled()) {
-			logger.debug(msg);
-		}
-	}
 }
