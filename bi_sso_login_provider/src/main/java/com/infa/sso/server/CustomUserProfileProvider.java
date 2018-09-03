@@ -32,8 +32,6 @@ public class CustomUserProfileProvider implements UserProfileProvider {
 		CustomBDDPayload bddPayload = new CustomBDDPayload();
 		try {
 			String credPayload = new String(securityCredential.getPayload(), "UTF-8");
-			if (logger.isDebugEnabled())
-				logger.debug("Credential payload -> " + credPayload);
 			if (!credPayload.startsWith(SSOConstants.PAYLOAD_PREFIX)) {
 				return null;
 			}

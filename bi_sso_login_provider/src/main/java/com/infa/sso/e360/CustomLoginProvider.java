@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
+import java.util.Map;
 import java.util.Properties;
 
 import javax.servlet.http.HttpServletRequest;
@@ -60,6 +61,7 @@ public class CustomLoginProvider implements LoginProvider {
 	private static final String LOGOUT_REDIRECT_TARGET = "https://www.boehringer-ingelheim.com/";
 	private static final String SAML_RESPONSE_PARAM = "SAMLResponse";
 	private static final String FILE_LOC = "/app/infamdm/hub/server/custom_resources/";
+	private boolean isUseIDDLogin = false;
 
 	private Properties loginProperies = new Properties();
 
@@ -83,8 +85,7 @@ public class CustomLoginProvider implements LoginProvider {
 		} catch (FileNotFoundException e) {
 			logger.warn("Cannot find file custom_login_provider.properties");
 		} catch (IOException e) {
-			logger.error(
-					"Error reading file custom_login_provider.properties");
+			logger.error("Error reading file custom_login_provider.properties");
 		}
 
 	}
@@ -98,46 +99,42 @@ public class CustomLoginProvider implements LoginProvider {
 		SamlResponse samlResponseObj = null;
 		String samlDecoded = null;
 		SamlUtility samlUtility = new SamlUtility();
+		isUseIDDLogin = false; // Reset for each login
 
 		String requestBodySamlResponse = httpServletRequest.getParameter(SAML_RESPONSE_PARAM);
 
-		if (logger.isDebugEnabled())
-			logger.debug("SAML Response: " + requestBodySamlResponse);
-
 		if (requestBodySamlResponse == null || requestBodySamlResponse.length() == 0) {
-			logger.error("Request does not contains a SAMLResponse parameter.  SSO authentication will fail.");
-			return null; // Returning null will force a redirect to Ping Federate
+			logger.error(
+					"Request does not contains a SAMLResponse parameter.  SSO authentication will fail.  Will use IDD login form.");
+			isUseIDDLogin = true; // Trigger display of IDD login page
+			return null;
 		}
 
 		try {
 			samlDecoded = new String(Base64.decode(requestBodySamlResponse));
 		} catch (Exception ex) {
 			logger.error(
-					"Error executing Base64 decoding of SAML response.  Response may not be Base64 encoded.  Error: "
-							+ ex.getMessage());
+					"Error executing Base64 decoding of SAML response.  Response may not be Base64 encoded.  Error:{} ",
+					ex.getMessage());
 			return null;
 		}
 
-		logger.debug("SAML Response decoded: " + samlDecoded);
+		logger.debug("SAML Response decoded: {}", samlDecoded);
 
 		try {
 			samlResponseObj = decodeAndValidateSamlResponse(samlDecoded);
 			userId = samlResponseObj.getUserId().trim();
 			if (userId == null) {
 				logger.error("SAML response UID field is null");
-				return null; // Returning null will force a redirect to Ping Federate
+				return null;
 			}
 		} catch (Exception e) {
 			logger.error(e.getMessage());
-			// throw new LoginProviderException(e);
 			return null;
 		}
 
-		if (logger.isDebugEnabled()) {
-			logger.debug("SAML UID (user ID) -> " + userId);
-			logger.debug("SAML First Name -> " + samlResponseObj.getUserFirstName());
-			logger.debug("SAML Last Name -> " + samlResponseObj.getUserLastName());
-		}
+		logger.debug("SAML UID (user ID) -> {}  SAML First Name -> {}  SAML Last Name -> {}", userId,
+				samlResponseObj.getUserFirstName(), samlResponseObj.getUserLastName());
 
 		credentialBuilder.append(SSOConstants.PAYLOAD_PREFIX);
 		credentialBuilder.append(SSOConstants.PAYLOAD_SEPARATOR);
@@ -150,9 +147,7 @@ public class CustomLoginProvider implements LoginProvider {
 			lc = new LoginCredentials(credentialBuilder.toString().getBytes(SSOConstants.PAYLOAD_CHAR_ENCODING));
 			lc.setFirstName(StringUtilities.removeNonPrintChars(samlResponseObj.getUserFirstName().trim()));
 			lc.setLastName(StringUtilities.removeNonPrintChars(samlResponseObj.getUserLastName().trim()));
-			if (logger.isDebugEnabled()) {
-				logger.debug("Created LoginCredential");
-			}
+			logger.debug("Created LoginCredential");
 		} catch (Exception e) {
 			logger.error("Credential creation error", e);
 			throw new LoginProviderException("Credential creation error", e);
@@ -170,19 +165,19 @@ public class CustomLoginProvider implements LoginProvider {
 	public void initialize(Properties properties) {
 
 		String redirectInd = properties.getProperty("enable.redirect");
-		logger.debug("Redirect indicator - > " + redirectInd);
+		logger.debug("Redirect indicator - > {} ", redirectInd);
 
 	}
 
 	@Override
 	public boolean isUseIDDLoginForm() {
-		return false;
+
+		logger.debug("isUseIDDLoginForm value: {}", isUseIDDLogin);
+		return isUseIDDLogin;
 	}
 
 	@Override
 	public void onLogout(HttpServletRequest request, HttpServletResponse response) {
-
-		logger.debug("Issue IDD logout request");
 
 		try {
 			if (!response.isCommitted()) {
@@ -205,26 +200,40 @@ public class CustomLoginProvider implements LoginProvider {
 	public void redirectToProviderLoginPage(HttpServletRequest request, HttpServletResponse response,
 			String originalRequest) throws LoginProviderException {
 
-		if (logger.isDebugEnabled())
+		if (logger.isDebugEnabled()) {
 			logger.debug("Entering redirectToProviderLoginPage");
 
+			Map<String, Object> paramMap = request.getParameterMap();
+			for (String key : paramMap.keySet()) {
+				String[] strArr = (String[]) paramMap.get(key);
+				for (String val : strArr) {
+					logger.debug("Request Parameters: {}", val);
+				}
+			}
+
+		}
+
 		try {
+
 			if ("true".equalsIgnoreCase(request.getParameter("logoutInd"))) {
 				if (logger.isDebugEnabled())
 					logger.debug("Issuing logout response");
 				/*
-				 * Since there was not a requirement for a specific logout target page, the BI homepage is being used.
+				 * Since there was not a requirement for a specific logout target page, the BI
+				 * homepage is being used.
 				 */
-				response.sendRedirect(LOGOUT_REDIRECT_TARGET); 
+				response.sendRedirect(LOGOUT_REDIRECT_TARGET);
 			} else {
-				/* David Mecca (HighPoint)
+				/*
+				 * David Mecca (HighPoint)
 				 * 
-				 * Per Steve Yannatuono, we won't need service provider initiated authentication.  Therefore, the logic
-				 * to create an authentication request has been commented out.
+				 * Per Steve Yannatuono, we won't need service provider initiated
+				 * authentication. Therefore, the logic to create an authentication request has
+				 * been commented out.
 				 * 
 				 */
 				// redirectUserForAuthentication(response);
-				response.sendRedirect("https://pfq1.boehringer.com/idp/SSO.saml2");
+				// response.sendRedirect("https://pfq1.boehringer.com/idp/SSO.saml2");
 			}
 		} catch (IOException | LinkageError e) {
 			logger.error(e.getMessage());
@@ -286,7 +295,8 @@ public class CustomLoginProvider implements LoginProvider {
 		} catch (Exception e) {
 			logger.error("Error retrieving assertion from SAML response. It may be null.");
 			throw new SamlException(
-					"Error retrieving assertion from SAML response. It may be null.  Error: " + e.getMessage());
+					"Error retrieving assertion from SAML response. It may be null.  Error: " + e.getMessage()) {
+			};
 		}
 	}
 
@@ -418,7 +428,8 @@ public class CustomLoginProvider implements LoginProvider {
 	}
 
 	/*
-	 * Logic to create a service provider initiated authentication request to the IdP.  For now, this is not being used.
+	 * Logic to create a service provider initiated authentication request to the
+	 * IdP. For now, this is not being used.
 	 */
 	private void redirectUserForAuthentication(HttpServletResponse httpServletResponse) {
 		AuthenticationRequestBuilder arb = new AuthenticationRequestBuilder();
