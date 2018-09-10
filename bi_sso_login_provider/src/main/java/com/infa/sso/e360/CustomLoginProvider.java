@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.cert.X509Certificate;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -19,6 +20,8 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.commons.io.IOUtils;
 import org.opensaml.DefaultBootstrap;
 import org.opensaml.saml2.core.Assertion;
+import org.opensaml.saml2.core.Attribute;
+import org.opensaml.saml2.core.AttributeStatement;
 import org.opensaml.saml2.core.AuthnRequest;
 import org.opensaml.saml2.core.Response;
 import org.opensaml.saml2.core.validator.ResponseSchemaValidator;
@@ -95,7 +98,7 @@ public class CustomLoginProvider implements LoginProvider {
 			throws LoginProviderException {
 
 		StringBuilder credentialBuilder = new StringBuilder();
-		String userId = null;
+		String UID = null;
 		SamlResponse samlResponseObj = null;
 		String samlDecoded = null;
 		SamlUtility samlUtility = new SamlUtility();
@@ -110,35 +113,24 @@ public class CustomLoginProvider implements LoginProvider {
 			return null;
 		}
 
-		try {
-			samlDecoded = new String(Base64.decode(requestBodySamlResponse));
-		} catch (Exception ex) {
-			logger.error(
-					"Error executing Base64 decoding of SAML response.  Response may not be Base64 encoded.  Error:{} ",
-					ex.getMessage());
-			return null;
-		}
-
 		logger.debug("SAML Response decoded: {}", samlDecoded);
 
 		try {
+			samlDecoded = new String(Base64.decode(requestBodySamlResponse));
 			samlResponseObj = decodeAndValidateSamlResponse(samlDecoded);
-			userId = samlResponseObj.getUserId().trim();
-			if (userId == null) {
-				logger.error("SAML response UID field is null");
-				return null;
-			}
+			UID = samlResponseObj.getUserId().trim();
 		} catch (Exception e) {
-			logger.error(e.getMessage());
+			logger.error("Error during decoding and validation of SAML response.  Error:{}", e.getMessage());
+			isUseIDDLogin = true; // Trigger display of IDD login page
 			return null;
 		}
 
-		logger.debug("SAML UID (user ID) -> {}  SAML First Name -> {}  SAML Last Name -> {}", userId,
+		logger.debug("SAML UID (user ID) -> {}  SAML First Name -> {}  SAML Last Name -> {}", UID,
 				samlResponseObj.getUserFirstName(), samlResponseObj.getUserLastName());
 
 		credentialBuilder.append(SSOConstants.PAYLOAD_PREFIX);
 		credentialBuilder.append(SSOConstants.PAYLOAD_SEPARATOR);
-		credentialBuilder.append(StringUtilities.removeNonPrintChars(userId));
+		credentialBuilder.append(StringUtilities.removeNonPrintChars(UID));
 		credentialBuilder.append(SSOConstants.PAYLOAD_SEPARATOR);
 		credentialBuilder.append(samlUtility.getSecureRandomId());
 
@@ -309,6 +301,9 @@ public class CustomLoginProvider implements LoginProvider {
 	}
 
 	private void validateResponse(Response response) throws Exception {
+		
+		boolean hasUid = false;
+		
 		try {
 			new ResponseSchemaValidator().validate(response);
 		} catch (ValidationException ex) {
@@ -319,6 +314,28 @@ public class CustomLoginProvider implements LoginProvider {
 			throw new Exception("The response issuer didn't match the expected value");
 		}
 
+		//Validate if the SAML response has a UID attribute with a value
+		List<AttributeStatement> statementList = response.getAssertions().get(0).getAttributeStatements();
+		for (AttributeStatement as : statementList) {
+
+			List<Attribute> attrbList = as.getAttributes();
+			for (Attribute a : attrbList) {
+
+				if ("uid".equalsIgnoreCase(a.getName())) {
+					hasUid = true;
+					if (a.getAttributeValues().get(0) == null) {
+						throw new Exception("The response does not contain a UID attribute value.");
+					}
+				}
+
+			}
+
+		}
+		
+		if(!hasUid) {
+			throw new Exception("The SAML response does not contain a UID attribute entry.");
+		}
+		
 		try {
 			String statusCode = response.getStatus().getStatusCode().getValue();
 			if (!("urn:oasis:names:tc:SAML:2.0:status:Success")

@@ -13,15 +13,11 @@
 			<outputDirectory>META-INF</outputDirectory>
 			<includes>
 				<include>MANIFEST.MF</include>
-				<include>pf_idp_meta.xml</include>
 			</includes>
 		</fileSet>
 		<fileSet>
 			<directory>src/main/resources</directory>
 			<outputDirectory>/</outputDirectory>
-			<includes>
-				<include>pf_idp_meta.xml</include>
-			</includes>
 		</fileSet>
 		<fileSet>
 			<directory>target/lib</directory>
